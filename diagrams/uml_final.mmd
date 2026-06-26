@@ -9,6 +9,8 @@ classDiagram
         +add_pet(pet Pet) None
         +get_pets() list
         +set_schedule_window(start str, end str) None
+        +to_dict() dict
+        +from_dict(data dict) Owner$
     }
 
     class Pet {
@@ -22,6 +24,9 @@ classDiagram
         +remove_task(task_id str) None
         +get_tasks() list
         +filter_tasks(completed bool) list
+        +tasks_by_status(status str) list
+        +to_dict() dict
+        +from_dict(data dict) Pet$
     }
 
     class Task {
@@ -34,10 +39,14 @@ classDiagram
         +str recurrence
         +list recurrence_days
         +bool completed
+        +str status
         +str due_date
         +priority_value() int
         +mark_complete() None
+        +set_status(status str) None
+        +type_emoji() str
         +to_dict() dict
+        +from_dict(data dict) Task$
         +next_occurrence() Task
     }
 
@@ -51,9 +60,16 @@ classDiagram
         +sort_by_time(tasks list) list
         +filter_by_time(tasks list, available_minutes int) list
         +assign_time_slots(tasks list) list
+        +find_next_available_slot(duration_minutes int, after_time str) str
         +detect_conflicts(other_schedules list) list
         +handle_completion(task Task) Task
         +explain_plan() str
+    }
+
+    class Persistence {
+        <<module functions>>
+        +save_to_json(owner Owner, path str) None
+        +load_from_json(path str) Owner
     }
 
     Owner "1" --> "1..*" Pet : owns
@@ -61,3 +77,4 @@ classDiagram
     Scheduler "1" --> "1" Owner : uses
     Scheduler "1" --> "1" Pet : schedules for
     Task ..> Task : next_occurrence() creates
+    Persistence ..> Owner : serializes / rebuilds

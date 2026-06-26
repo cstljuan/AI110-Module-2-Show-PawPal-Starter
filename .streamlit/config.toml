@@ -1,0 +1,11 @@
+# PawPal+ theme — warm orange / brown palette (UI/UX Pro Max recommendation)
+[theme]
+primaryColor = "#F97316"            # orange-500 — buttons, accents
+backgroundColor = "#FFF7ED"         # orange-50 — app background (warm cream)
+secondaryBackgroundColor = "#FFEDD5" # orange-100 — sidebar / cards
+textColor = "#7C2D12"               # orange-900 — warm brown text
+font = "sans serif"
+
+[runner]
+# Reload the entire Python process on source changes (prevents stale module cache)
+fastReruns = false

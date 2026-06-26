@@ -51,6 +51,16 @@
 - Why does this matter and what does it miss?
     - An exact-match check (`a_start == b_start`) would miss cases like Biscuit's 30-min walk (07:00–07:30) overlapping Mochi's 5-min medication (07:10–07:15). Overlap-duration detection catches those. The tradeoff is that the method only detects conflicts *after* both schedules are generated — it warns but does not re-plan. A smarter resolver would stagger pet schedules automatically; this version returns warnings and trusts the owner to adjust.
 
+- Describe a third tradeoff (Phase 4 — next available slot).
+    - `find_next_available_slot()` uses a **first-fit** gap scan: it walks booked intervals in time order and returns the first gap large enough for the requested duration. It does not try to find the *tightest* gap (best-fit) that would minimize wasted time.
+- Why is first-fit reasonable here?
+    - For a single owner's single day, the schedule is tiny (a handful of tasks), so the theoretical packing efficiency of best-fit is irrelevant. First-fit gives the *earliest* opening, which is what an owner actually wants ("when's the soonest I can fit a 30-minute walk?"). It's also O(n) over a sorted list and trivial to reason about. Best-fit would be more code for a benefit no owner would notice.
+
+- Describe a fourth tradeoff (Phase 4 — persistence format).
+    - Persistence uses hand-written `to_dict()` / `from_dict()` methods serialized with the standard-library `json` module, rather than a schema library like `marshmallow` or `pydantic`.
+- Why is custom dict conversion reasonable here?
+    - The object graph is small, fully owned by us, and every field is JSON-native (str/int/float/bool/list). A custom round-trip is dependency-free, keeps the schema visible in one place, and is easy to debug. A library would add a dependency and ceremony for capabilities this app doesn't need (declarative validation, partial loads, polymorphic nesting). If the data later needed strict validation on load — e.g., rejecting a corrupted file with a helpful error — that's the point where `marshmallow`/`pydantic` would start to pay off; today the `__post_init__` validators on `Task` already reject bad field values when `from_dict` reconstructs them.
+
 ---
 
 ## 3. AI Collaboration

@@ -1,7 +1,14 @@
 """Tests for PawPal+ core logic."""
 
 import pytest
-from pawpal_system import Owner, Pet, Task, Scheduler
+from pawpal_system import (
+    Owner,
+    Pet,
+    Task,
+    Scheduler,
+    save_to_json,
+    load_from_json,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -351,3 +358,148 @@ def test_detect_conflicts_same_pet_slots_never_flagged():
     # No other schedules — only self; same-pet skipped by design
     conflicts = sched.detect_conflicts()
     assert conflicts == []
+
+
+# ---------------------------------------------------------------------------
+# find_next_available_slot tests (Challenge 1)
+# ---------------------------------------------------------------------------
+
+def test_next_slot_empty_schedule_returns_day_start():
+    """With nothing booked, the next slot is the start of the owner's day."""
+    owner = make_owner(day_start="08:00", day_end="20:00")
+    pet = make_pet()
+    sched = Scheduler(owner=owner, pet=pet)
+    sched.generate_schedule()  # no tasks -> empty schedule
+    assert sched.find_next_available_slot(30) == "08:00"
+
+
+def test_next_slot_after_back_to_back_bookings():
+    """Back-to-back tasks push the next opening to the end of the last booking."""
+    owner = make_owner(day_start="08:00", day_end="20:00")
+    pet = make_pet()
+    pet.add_task(make_task(title="A", duration_minutes=30, priority="high"))
+    pet.add_task(make_task(title="B", duration_minutes=20, priority="high"))
+    sched = Scheduler(owner=owner, pet=pet)
+    sched.generate_schedule()
+    # 08:00-08:30 then 08:30-08:50 -> first free slot at 08:50
+    assert sched.find_next_available_slot(15) == "08:50"
+
+
+def test_next_slot_honors_after_time_floor():
+    """after_time pushes the search start forward even if earlier gaps exist."""
+    owner = make_owner(day_start="08:00", day_end="20:00")
+    pet = make_pet()
+    sched = Scheduler(owner=owner, pet=pet)
+    sched.generate_schedule()
+    assert sched.find_next_available_slot(30, after_time="14:00") == "14:00"
+
+
+def test_next_slot_returns_none_when_no_room():
+    """Returns None when the requested duration cannot fit before day_end."""
+    owner = make_owner(day_start="08:00", day_end="08:30")  # only 30 min
+    pet = make_pet()
+    sched = Scheduler(owner=owner, pet=pet)
+    sched.generate_schedule()
+    assert sched.find_next_available_slot(60) is None
+
+
+# ---------------------------------------------------------------------------
+# Kanban status tests (Challenge 3)
+# ---------------------------------------------------------------------------
+
+def test_task_default_status_is_todo():
+    """New tasks start in the 'todo' Kanban column."""
+    assert make_task().status == "todo"
+
+
+def test_set_status_moves_task_and_syncs_completed():
+    """set_status('done') moves the task and flips completed to True."""
+    task = make_task()
+    task.set_status("in_progress")
+    assert task.status == "in_progress"
+    assert task.completed is False
+    task.set_status("done")
+    assert task.status == "done"
+    assert task.completed is True
+
+
+def test_mark_complete_also_sets_done_status():
+    """mark_complete() keeps the Kanban status in sync."""
+    task = make_task()
+    task.mark_complete()
+    assert task.status == "done"
+
+
+def test_set_status_rejects_invalid_value():
+    """An unknown status raises ValueError."""
+    task = make_task()
+    with pytest.raises(ValueError):
+        task.set_status("archived")
+
+
+def test_tasks_by_status_groups_correctly():
+    """tasks_by_status returns only tasks in the requested column."""
+    pet = make_pet()
+    t1 = make_task(title="A")
+    t2 = make_task(title="B")
+    t2.set_status("in_progress")
+    pet.add_task(t1)
+    pet.add_task(t2)
+    assert len(pet.tasks_by_status("todo")) == 1
+    assert len(pet.tasks_by_status("in_progress")) == 1
+    assert pet.tasks_by_status("done") == []
+
+
+# ---------------------------------------------------------------------------
+# Persistence tests (Challenge 2)
+# ---------------------------------------------------------------------------
+
+def test_task_dict_round_trip_preserves_fields():
+    """Task.from_dict(task.to_dict()) reproduces all fields."""
+    task = make_task(title="Walk", priority="high", preferred_time="morning",
+                     recurrence="weekly", recurrence_days=["monday"])
+    task.set_status("in_progress")
+    clone = Task.from_dict(task.to_dict())
+    assert clone.title == task.title
+    assert clone.priority == task.priority
+    assert clone.recurrence_days == task.recurrence_days
+    assert clone.status == task.status
+    assert clone.task_id == task.task_id
+
+
+def test_owner_dict_round_trip_preserves_nested_pets_and_tasks():
+    """Owner.from_dict(owner.to_dict()) restores the full object graph."""
+    owner = make_owner()
+    pet = make_pet(name="Biscuit")
+    pet.add_task(make_task(title="Walk"))
+    pet.add_task(make_task(title="Feed", task_type="feeding"))
+    owner.add_pet(pet)
+
+    clone = Owner.from_dict(owner.to_dict())
+    assert clone.name == owner.name
+    assert len(clone.get_pets()) == 1
+    assert clone.get_pets()[0].name == "Biscuit"
+    assert len(clone.get_pets()[0].get_tasks()) == 2
+
+
+def test_save_and_load_json_round_trip(tmp_path):
+    """save_to_json then load_from_json restores an equivalent Owner from disk."""
+    owner = make_owner(name="Jordan")
+    pet = make_pet(name="Mochi", species="cat")
+    pet.add_task(make_task(title="Feed", task_type="feeding"))
+    owner.add_pet(pet)
+
+    path = tmp_path / "data.json"
+    save_to_json(owner, str(path))
+    loaded = load_from_json(str(path))
+
+    assert loaded is not None
+    assert loaded.name == "Jordan"
+    assert loaded.get_pets()[0].name == "Mochi"
+    assert loaded.get_pets()[0].get_tasks()[0].title == "Feed"
+
+
+def test_load_json_missing_file_returns_none(tmp_path):
+    """load_from_json returns None when the file does not exist."""
+    missing = tmp_path / "nope.json"
+    assert load_from_json(str(missing)) is None

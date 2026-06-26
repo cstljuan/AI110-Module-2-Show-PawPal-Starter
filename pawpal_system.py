@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
+import json
 import uuid
 
 
@@ -15,7 +16,21 @@ VALID_TASK_TYPES = {"walk", "feeding", "medication", "grooming", "enrichment"}
 VALID_PRIORITIES = {"low", "medium", "high"}
 VALID_RECURRENCES = {"daily", "weekly", "none"}
 VALID_PREFERRED_TIMES = {"morning", "afternoon", "evening", "any"}
+VALID_STATUSES = {"todo", "in_progress", "done"}   # Kanban columns
 DAYS_OF_WEEK = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
+
+# Emoji per task type — used by CLI/UI formatting layers (Challenge 4).
+TASK_TYPE_EMOJI = {
+    "walk": "🦮",
+    "feeding": "🍖",
+    "medication": "💊",
+    "grooming": "🛁",
+    "enrichment": "🧸",
+}
+# Emoji per Kanban status.
+STATUS_EMOJI = {"todo": "📋", "in_progress": "🔄", "done": "✅"}
+# Emoji per priority level.
+PRIORITY_EMOJI = {"high": "🔴", "medium": "🟡", "low": "🟢"}
 
 
 # ---------------------------------------------------------------------------
@@ -33,6 +48,7 @@ class Task:
     recurrence_days: list = field(default_factory=list)  # weekly anchor: ["monday", "friday"]
     task_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
     completed: bool = False
+    status: str = "todo"                         # Kanban column: todo | in_progress | done
     due_date: str = ""                           # "YYYY-MM-DD"; set when tracking next occurrence
 
     def __post_init__(self):
@@ -45,16 +61,35 @@ class Task:
             raise ValueError(f"recurrence must be one of {VALID_RECURRENCES}, got '{self.recurrence}'")
         if self.preferred_time not in VALID_PREFERRED_TIMES:
             raise ValueError(f"preferred_time must be one of {VALID_PREFERRED_TIMES}, got '{self.preferred_time}'")
+        if self.status not in VALID_STATUSES:
+            raise ValueError(f"status must be one of {VALID_STATUSES}, got '{self.status}'")
         if self.duration_minutes <= 0:
             raise ValueError(f"duration_minutes must be > 0, got {self.duration_minutes}")
+        # Keep completed flag and Kanban status consistent on construction/load.
+        if self.completed and self.status != "done":
+            self.status = "done"
+        if self.status == "done":
+            self.completed = True
 
     def priority_value(self) -> int:
         """Lower number = higher priority. Used as sort key."""
         return PRIORITY_RANK.get(self.priority, 1)
 
     def mark_complete(self) -> None:
-        """Mark this task as completed."""
+        """Mark this task as completed and move it to the 'done' Kanban column."""
         self.completed = True
+        self.status = "done"
+
+    def set_status(self, status: str) -> None:
+        """Move task to a Kanban column (todo/in_progress/done); syncs the completed flag."""
+        if status not in VALID_STATUSES:
+            raise ValueError(f"status must be one of {VALID_STATUSES}, got '{status}'")
+        self.status = status
+        self.completed = (status == "done")
+
+    def type_emoji(self) -> str:
+        """Return the emoji that represents this task's type."""
+        return TASK_TYPE_EMOJI.get(self.task_type, "🐾")
 
     def to_dict(self) -> dict:
         """Return task fields as a plain dictionary."""
@@ -68,8 +103,26 @@ class Task:
             "recurrence": self.recurrence,
             "recurrence_days": self.recurrence_days,
             "completed": self.completed,
+            "status": self.status,
             "due_date": self.due_date,
         }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Task":
+        """Rebuild a Task from a plain dictionary (inverse of to_dict)."""
+        return cls(
+            title=data["title"],
+            task_type=data["task_type"],
+            duration_minutes=data["duration_minutes"],
+            priority=data.get("priority", "medium"),
+            preferred_time=data.get("preferred_time", "any"),
+            recurrence=data.get("recurrence", "daily"),
+            recurrence_days=list(data.get("recurrence_days", [])),
+            task_id=data.get("task_id", str(uuid.uuid4())[:8]),
+            completed=data.get("completed", False),
+            status=data.get("status", "todo"),
+            due_date=data.get("due_date", ""),
+        )
 
     def next_occurrence(self):
         """Return a new Task due one recurrence period later; None if recurrence='none'."""
@@ -120,6 +173,34 @@ class Pet:
             return list(self.tasks)
         return [t for t in self.tasks if t.completed == completed]
 
+    def tasks_by_status(self, status: str) -> list:
+        """Return tasks currently in the given Kanban column (todo/in_progress/done)."""
+        return [t for t in self.tasks if t.status == status]
+
+    def to_dict(self) -> dict:
+        """Return pet profile + nested task dicts as a plain dictionary."""
+        return {
+            "name": self.name,
+            "species": self.species,
+            "breed": self.breed,
+            "age_years": self.age_years,
+            "weight_kg": self.weight_kg,
+            "tasks": [t.to_dict() for t in self.tasks],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Pet":
+        """Rebuild a Pet (and its nested Tasks) from a plain dictionary."""
+        pet = cls(
+            name=data["name"],
+            species=data["species"],
+            breed=data.get("breed", ""),
+            age_years=data.get("age_years", 0.0),
+            weight_kg=data.get("weight_kg", 0.0),
+        )
+        pet.tasks = [Task.from_dict(t) for t in data.get("tasks", [])]
+        return pet
+
 
 # ---------------------------------------------------------------------------
 # Owner
@@ -152,6 +233,28 @@ class Owner:
         """Update the daily scheduling window (HH:MM strings)."""
         self.day_start = start
         self.day_end = end
+
+    def to_dict(self) -> dict:
+        """Return owner profile + nested pet dicts as a plain dictionary."""
+        return {
+            "name": self.name,
+            "email": self.email,
+            "day_start": self.day_start,
+            "day_end": self.day_end,
+            "pets": [p.to_dict() for p in self.pets],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Owner":
+        """Rebuild an Owner (and its nested Pets + Tasks) from a plain dictionary."""
+        owner = cls(
+            name=data["name"],
+            email=data.get("email", ""),
+            day_start=data.get("day_start", "08:00"),
+            day_end=data.get("day_end", "20:00"),
+        )
+        owner.pets = [Pet.from_dict(p) for p in data.get("pets", [])]
+        return owner
 
 
 # ---------------------------------------------------------------------------
@@ -223,6 +326,44 @@ class Scheduler:
             })
             current += timedelta(minutes=task.duration_minutes)
         return slots
+
+    def find_next_available_slot(self, duration_minutes: int, after_time: str = None) -> str:
+        """Return the earliest HH:MM gap in the owner's window that fits duration_minutes; None if none.
+
+        Scans the already-generated schedule for free gaps between booked tasks
+        (and the trailing gap before day_end). Honors an optional 'after_time' floor
+        so a caller can ask "what's the next opening after 14:00?".
+        """
+        fmt = "%H:%M"
+        window_start = datetime.strptime(self.owner.day_start, fmt)
+        window_end = datetime.strptime(self.owner.day_end, fmt)
+
+        # Earliest moment we may start: day_start, or after_time if it's later.
+        cursor = window_start
+        if after_time:
+            floor = datetime.strptime(after_time, fmt)
+            cursor = max(cursor, floor)
+
+        # Build sorted busy intervals from the current schedule.
+        busy = []
+        for slot in self.schedule:
+            start = datetime.strptime(slot["start_time"], fmt)
+            end = start + timedelta(minutes=slot["task"].duration_minutes)
+            busy.append((start, end))
+        busy.sort()
+
+        # Walk gaps: advance cursor past each overlapping booking, then test the gap.
+        for start, end in busy:
+            if end <= cursor:
+                continue                      # booking already behind the cursor
+            if start - cursor >= timedelta(minutes=duration_minutes):
+                return cursor.strftime(fmt)   # gap before this booking is big enough
+            cursor = max(cursor, end)         # jump cursor to end of this booking
+
+        # Trailing gap between the cursor and end of the day.
+        if window_end - cursor >= timedelta(minutes=duration_minutes):
+            return cursor.strftime(fmt)
+        return None
 
     def detect_conflicts(self, other_schedules: list = None) -> list:
         """Check for overlapping time slots across this schedule and any other_schedules; return warning strings."""
@@ -296,3 +437,31 @@ class Scheduler:
         if skipped > 0:
             lines.append(f"  {skipped} task(s) skipped (time overflow or not scheduled today)")
         return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Persistence — custom dict conversion (no third-party serializer needed)
+# ---------------------------------------------------------------------------
+# We use each class's to_dict()/from_dict() rather than a library like marshmallow.
+# The object graph is small and fully owned by us (Owner -> Pets -> Tasks), all
+# fields are JSON-native (str/int/float/bool/list), so a hand-written round-trip
+# is simpler, dependency-free, and easy to debug. marshmallow earns its keep when
+# you need schema validation, partial loads, or polymorphic nesting — none apply here.
+
+DATA_FILE = "data.json"
+
+
+def save_to_json(owner: "Owner", path: str = DATA_FILE) -> None:
+    """Serialize an Owner (with all pets and tasks) to a JSON file."""
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(owner.to_dict(), f, indent=2, ensure_ascii=False)
+
+
+def load_from_json(path: str = DATA_FILE) -> "Owner | None":
+    """Rebuild an Owner from a JSON file; return None if the file does not exist."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return None
+    return Owner.from_dict(data)
