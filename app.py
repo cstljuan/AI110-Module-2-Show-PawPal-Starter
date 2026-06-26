@@ -137,6 +137,7 @@ with tab_tasks:
 
         st.divider()
 
+        # --- Add task form ---------------------------------------------------
         with st.form("add_task_form"):
             st.subheader(f"Add task for {selected_pet.name}")
 
@@ -176,22 +177,71 @@ with tab_tasks:
                 selected_pet.add_task(new_task)
                 st.success(f"Added **{new_task.title}** to {selected_pet.name}!")
 
-        # Display tasks table
+        # --- Task table with filter -------------------------------------------
         tasks = selected_pet.get_tasks()
         if tasks:
-            st.subheader(f"{selected_pet.name}'s tasks ({len(tasks)} total)")
-            rows = [
-                {
-                    "Title":         t.title,
-                    "Type":          t.task_type,
-                    "Duration (min)": t.duration_minutes,
-                    "Priority":      t.priority,
-                    "Preferred time": t.preferred_time,
-                    "Recurrence":    t.recurrence,
-                }
-                for t in tasks
-            ]
-            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+            st.divider()
+            col_hdr, col_filt = st.columns([2, 2])
+            with col_hdr:
+                st.subheader(f"{selected_pet.name}'s tasks ({len(tasks)} total)")
+            with col_filt:
+                filter_opt = st.radio(
+                    "Show:",
+                    ["All", "Incomplete", "Completed"],
+                    horizontal=True,
+                    key="task_filter",
+                )
+
+            completed_map = {"All": None, "Incomplete": False, "Completed": True}
+            filtered = selected_pet.filter_tasks(completed=completed_map[filter_opt])
+
+            if filtered:
+                rows = [
+                    {
+                        "Title":          t.title,
+                        "Type":           t.task_type,
+                        "Duration (min)": t.duration_minutes,
+                        "Priority":       t.priority,
+                        "Preferred time": t.preferred_time,
+                        "Recurrence":     t.recurrence,
+                        "Done":           "✓" if t.completed else "",
+                    }
+                    for t in filtered
+                ]
+                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            else:
+                st.info(f"No {filter_opt.lower()} tasks for {selected_pet.name}.")
+
+            # --- Mark complete + auto-generate next occurrence ---------------
+            st.divider()
+            st.subheader("Mark task complete")
+            incomplete = selected_pet.filter_tasks(completed=False)
+            if not incomplete:
+                st.info("All tasks are already marked complete.")
+            else:
+                with st.form("mark_complete_form"):
+                    task_choice = st.selectbox(
+                        "Task to complete",
+                        [t.title for t in incomplete],
+                        key="mark_complete_select",
+                    )
+                    mark_btn = st.form_submit_button("Mark complete & schedule next")
+
+                if mark_btn:
+                    target = next(t for t in incomplete if t.title == task_choice)
+                    target.mark_complete()
+                    next_t = target.next_occurrence()
+                    if next_t:
+                        selected_pet.add_task(next_t)
+                        st.success(
+                            f"**'{target.title}'** marked complete. "
+                            f"Next occurrence ({target.recurrence}) added — due **{next_t.due_date}**."
+                        )
+                    else:
+                        st.success(
+                            f"**'{target.title}'** marked complete. "
+                            f"Recurrence is 'none' — no follow-up task created."
+                        )
         else:
             st.info(f"No tasks for {selected_pet.name} yet.")
 
@@ -219,13 +269,22 @@ with tab_schedule:
 
         sched_pet: Pet = next(p for p in pets if p.name == sched_pet_name)
 
+        # Sort mode toggle — passes through to generate_schedule()
+        sort_mode_label = st.radio(
+            "Sort tasks by:",
+            ["Priority (high → low)", "Time of day (morning → evening)"],
+            horizontal=True,
+            key="sort_mode",
+        )
+        sort_key = "time" if "Time" in sort_mode_label else "priority"
+
         if st.button("Generate schedule", type="primary"):
             if not sched_pet.get_tasks():
                 st.warning(f"No tasks for {sched_pet.name}. Add some in the Tasks tab.")
             else:
                 # --- BRIDGE: UI inputs → Scheduler.generate_schedule() ---
                 scheduler = Scheduler(owner=owner, pet=sched_pet, day_of_week=day)
-                schedule  = scheduler.generate_schedule()
+                schedule  = scheduler.generate_schedule(sort_mode=sort_key)
 
                 if not schedule:
                     st.warning(
@@ -235,7 +294,8 @@ with tab_schedule:
                 else:
                     st.success(
                         f"Schedule for **{sched_pet.name}** on **{day.title()}** — "
-                        f"{len(schedule)} task(s) planned."
+                        f"{len(schedule)} task(s) planned. "
+                        f"Sorted by: **{sort_mode_label.split(' (')[0].lower()}**."
                     )
 
                     # --- Metrics row ---
@@ -267,3 +327,34 @@ with tab_schedule:
                     # --- Plain-text explanation ---
                     st.subheader("Plan explanation")
                     st.code(scheduler.explain_plan(), language=None)
+
+                    # --- Cross-pet conflict detection -------------------------
+                    other_pets = [p for p in owner.get_pets() if p.name != sched_pet.name]
+                    if other_pets:
+                        st.divider()
+                        other_scheds = []
+                        for op in other_pets:
+                            os_sched = Scheduler(owner=owner, pet=op, day_of_week=day)
+                            os_sched.generate_schedule(sort_mode=sort_key)
+                            other_scheds.append(os_sched)
+
+                        conflicts = scheduler.detect_conflicts(other_schedules=other_scheds)
+
+                        if conflicts:
+                            st.subheader("⚠️ Scheduling Conflicts")
+                            st.caption(
+                                f"{owner.name} cannot attend to two pets simultaneously. "
+                                f"The following tasks overlap across pets on **{day.title()}**:"
+                            )
+                            for c in conflicts:
+                                st.warning(c)
+                            st.info(
+                                "**Tip:** Stagger pets' schedule windows "
+                                "(e.g., set one pet's tasks to 'afternoon') "
+                                "to resolve conflicts."
+                            )
+                        else:
+                            st.success(
+                                f"No scheduling conflicts detected between {sched_pet.name} "
+                                f"and other pets on {day.title()}."
+                            )

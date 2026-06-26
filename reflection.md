@@ -58,17 +58,22 @@
 **a. How you used AI**
 
 - How did you use AI tools during this project (for example: design brainstorming, debugging, refactoring)?
-    - Used AI for initial class design brainstorming (what attributes each class needs), for scaffolding method stubs with correct signatures, for explaining scheduling algorithm tradeoffs (greedy vs. optimal), and for reviewing edge cases in the scheduler logic.
+    - Used AI for initial class design brainstorming (what attributes each class needs), for scaffolding method stubs with correct signatures, and for explaining algorithm tradeoffs (greedy vs. optimal scheduling; exact-match vs. overlap-interval conflict detection). In Phase 3, used AI to generate the `detect_conflicts()` implementation and the full pytest suite, then reviewed each test manually to confirm it actually tests the right behavior.
 - What kinds of prompts or questions were most helpful?
-    - "What constraints should a pet care scheduler consider and which matter most?": forced a ranked list rather than a flat one.
-    - "What edge cases could break a greedy priority scheduler for this scenario?": surfaced the overflow/drop problem and the same-priority tie-break issue before coding.
+    - "What constraints should a pet care scheduler consider and which matter most?" — forced a ranked list rather than a flat one.
+    - "What edge cases could break a greedy priority scheduler for this scenario?" — surfaced the overflow/drop problem and the same-priority tie-break issue before coding.
+    - "Which AI coding assistant features were most effective here?" — the most effective feature was code generation with constraints given upfront (e.g., "generate only this method, do not change the rest of the class"). That kept changes surgical rather than wholesale rewrites that drift from intended design.
 
 **b. Judgment and verification**
 
 - Describe one moment where you did not accept an AI suggestion as-is.
-    - AI initially suggested `Scheduler` own the task list and `Pet` hold only profile data. Accepted the profile data part, and rejected task ownership. Tasks belong to a pet conceptually, not to a scheduler run.
+    - During Phase 3, the AI initially suggested adding `detect_conflicts()` as a `@staticmethod` that takes two arbitrary slot lists as arguments, with no reference to `self`. That would have been more flexible but it disconnects the method from the Scheduler's own schedule — callers would have to reach inside the scheduler to get `scheduler.schedule` and pass it manually. Instead, it was redesigned as an instance method that uses `self.schedule` directly, and accepts `other_schedules` as a list of other Scheduler objects. This made call sites read clearly: `sched_a.detect_conflicts(other_schedules=[sched_b])`.
 - How did you evaluate or verify what the AI suggested?
-    - Asked: "If I run the scheduler twice in one day, should the tasks change?" No, tasks are stable pet data, not scheduler artifacts. That confirmed tasks belong on `Pet`. Tested the decision by tracing what `add_task()` / `remove_task()` should modify and which object a user would logically interact with.
+    - Asked: "If I run the scheduler twice in one day, should the tasks change?" No, tasks are stable pet data, not scheduler artifacts. That confirmed tasks belong on `Pet`. For conflict detection, the test `test_detect_conflicts_same_pet_slots_never_flagged` was written specifically to verify that the `if pet_a == pet_b: continue` guard works — if that guard were absent, sequential same-pet slots would generate false positives.
+- How did using a structured, phase-by-phase approach help you stay organized?
+    - Each phase had a clear checkpoint ("CLI output is correct," "26 tests pass," "UI shows conflict warnings"). Those checkpoints acted as acceptance criteria. Working with an AI that generates code fast makes it tempting to keep adding features; the checkpoints forced a complete stop, verification, and reflection before moving on. This prevented the codebase from drifting into unverified territory.
+- What does it mean to be the "lead architect" when collaborating with a powerful AI?
+    - The AI generates code quickly and confidently, but it doesn't know which design decisions are load-bearing. The architect's job is to hold the invariants — "tasks live on Pet, not Scheduler," "conflict detection warns but does not re-plan," "sort_mode is a parameter, not a subclass" — and push back when generated code violates them. AI accelerates execution; the architect is responsible for coherence.
 
 ---
 

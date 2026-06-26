@@ -257,11 +257,15 @@ class Scheduler:
         task.mark_complete()
         return task.next_occurrence()
 
-    def generate_schedule(self) -> list:
-        """Run full pipeline (recurrence filter -> priority sort -> time trim -> slot assign)."""
+    def generate_schedule(self, sort_mode: str = "priority") -> list:
+        """Run full pipeline (recurrence filter -> sort -> time trim -> slot assign). sort_mode: 'priority' or 'time'."""
         all_tasks = self.pet.get_tasks()
         active = [t for t in all_tasks if self._is_active_today(t)]
-        sorted_tasks = self.sort_by_priority(active)
+        sorted_tasks = (
+            self.sort_by_time(active)
+            if sort_mode == "time"
+            else self.sort_by_priority(active)
+        )
         budget = self.owner.available_minutes()
         chosen = self.filter_by_time(sorted_tasks, budget)
         self.schedule = self.assign_time_slots(chosen)

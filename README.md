@@ -22,6 +22,24 @@ Your final app should:
 - Display the plan clearly (and ideally explain the reasoning)
 - Include tests for the most important scheduling behaviors
 
+## ✨ Features
+
+| Feature | Where | How it works |
+|---------|-------|--------------|
+| **Owner setup** | Sidebar | Name, email, and daily window (HH:MM) stored in `st.session_state` |
+| **Multi-pet support** | Pets tab | Register unlimited pets; each owns its own task list |
+| **Task management** | Tasks tab | Add tasks with type, duration, priority, preferred time, and recurrence |
+| **Completion filter** | Tasks tab | Toggle All / Incomplete / Completed via `Pet.filter_tasks()` |
+| **Mark complete + auto-reschedule** | Tasks tab | Mark a task done; `Task.next_occurrence()` creates the next instance with an updated due date |
+| **Priority-first scheduling** | Schedule tab | `Scheduler.sort_by_priority()` — high → medium → low, morning preferred when priority ties |
+| **Time-of-day scheduling** | Schedule tab | `Scheduler.sort_by_time()` — morning → afternoon → evening toggle via UI radio button |
+| **Time-budget enforcement** | Schedule tab | `Scheduler.filter_by_time()` greedy drop: tasks that exceed available minutes are skipped entirely |
+| **Daily recurrence** | Schedule tab | `recurrence="daily"` tasks appear every day via `Scheduler._is_active_today()` |
+| **Weekly recurrence** | Schedule tab | `recurrence="weekly"` tasks appear only on selected days in `Task.recurrence_days` |
+| **Conflict detection** | Schedule tab | `Scheduler.detect_conflicts()` checks for overlapping time windows across pets (interval formula) |
+| **Plan explanation** | Schedule tab | `Scheduler.explain_plan()` prints a human-readable text summary of each slot and its reasoning |
+| **26 automated tests** | `tests/` | Full pytest suite covering all behaviors above |
+
 ## Getting started
 
 ### Setup
@@ -154,10 +172,86 @@ tests/test_pawpal.py::test_detect_conflicts_same_pet_slots_never_flagged PASSED 
 
 ## 📸 Demo Walkthrough
 
-1. Open the app (`streamlit run app.py`). The sidebar prompts for owner name and daily schedule window (e.g., 07:00–19:00). Click **Save owner**.
-2. Go to the **Pets** tab. Enter a pet name, species, and breed. Click **Add pet**. Repeat for additional pets (e.g., Biscuit the dog, Mochi the cat).
-3. Go to the **Tasks** tab. Select a pet from the dropdown. Fill in task title, type, duration, priority, preferred time, and recurrence. Click **Add task**. The task table below updates immediately.
-4. Go to the **Schedule** tab. Select a pet and day of week. Click **Generate schedule**. The app shows metrics (tasks scheduled, time used, tasks skipped) and a full schedule table with start times and reasoning.
-5. The plan explanation block (plain text) shows each task's assigned slot and why it was placed there (priority, type, preferred time).
+### Example workflow: Jordan + two pets
+
+**Step 1 — Owner setup**
+Open the app (`streamlit run app.py`). In the sidebar, enter name "Jordan", window 07:00–19:00, and click **Save owner**. The sidebar immediately shows the owner's daily budget (720 min).
+
+**Step 2 — Register pets**
+Go to the **Pets** tab. Add "Biscuit" (dog, Golden Retriever, 3 yr) and "Mochi" (cat, Domestic Shorthair, 5 yr). Both appear in the registered pets list.
+
+**Step 3 — Add tasks**
+Go to the **Tasks** tab. Select Biscuit. Add a "Morning walk" (walk, 30 min, high priority, morning, daily). Add an "Afternoon walk" (walk, 45 min, medium, afternoon, daily). Toggle the **Incomplete** filter to verify both tasks show up. Use **Mark complete** to mark the morning walk done — the app creates a new copy with tomorrow's due date and confirms it in a success banner.
+
+**Step 4 — Generate schedule**
+Go to the **Schedule** tab. Select Biscuit, Monday. Choose **"Time of day"** sort mode. Click **Generate schedule**. The app shows:
+- Metrics: tasks scheduled, minutes used, tasks skipped
+- Schedule table with HH:MM start times and reasoning column
+- Plan explanation code block
+
+Switch sort mode to **"Priority"** and regenerate — notice high-priority tasks move to the front regardless of their preferred time.
+
+**Step 5 — Conflict detection**
+With both pets having tasks, generate Biscuit's schedule. The app automatically generates Mochi's schedule too and runs `detect_conflicts()`. Since both start at 07:00, Jordan can't attend both simultaneously — the app shows yellow `st.warning()` banners for each overlapping slot, with a tip to stagger preferred times.
+
+### CLI sample output (`python main.py`)
+
+```
+====================================================
+  PawPal+ -- Today's Schedule (Monday)
+  Owner: Jordan  |  Window: 07:00 to 19:00
+====================================================
+
+Daily plan for Biscuit (dog) -- Monday
+--------------------------------------
+  07:00  Morning walk  (30 min)  [high priority]
+  07:30  Breakfast feeding  (10 min)  [high priority]
+  07:40  Heartworm medication  (5 min)  [high priority]
+  07:45  Evening feeding  (10 min)  [high priority]
+  07:55  Afternoon walk  (45 min)  [medium priority]
+  08:40  Fetch / enrichment play  (30 min)  [medium priority]
+--------------------------------------
+  130 min used / 720 min available
+  1 task(s) skipped (time overflow or not scheduled today)
+
+Daily plan for Mochi (cat) -- Monday
+------------------------------------
+  07:00  Breakfast feeding  (10 min)  [high priority]
+  07:10  Thyroid medication  (5 min)  [high priority]
+  07:15  Evening feeding  (10 min)  [high priority]
+  07:25  Interactive toy session  (20 min)  [medium priority]
+  07:45  Litter box cleaning  (10 min)  [medium priority]
+------------------------------------
+  55 min used / 720 min available
+
+====================================================
+  Phase 3 -- Algorithm Demos
+====================================================
+
+-- sort_by_time() vs sort_by_priority() (Biscuit daily tasks) --
+  sort_by_time()    : morning/high, morning/high, afternoon/medium, afternoon/medium, evening/high
+  sort_by_priority(): high/morning, high/morning, high/evening, medium/afternoon, medium/afternoon
+
+-- filter_tasks(completed=...) demo (Mochi) --
+  All tasks:  5
+  Incomplete: 5
+  After marking 'Breakfast feeding' complete:
+    Completed:  1
+    Incomplete: 4
+
+-- handle_completion() recurring auto-generation (Biscuit) --
+  Completing: 'Morning walk'  recurrence=daily
+  Next occurrence: 'Morning walk'  due 2026-06-27
+
+-- detect_conflicts() cross-pet owner-level check --
+  7 conflict(s) found -- owner cannot do both simultaneously:
+  CONFLICT: [Biscuit] 'Morning walk' (07:00-07:30) overlaps [Mochi] 'Breakfast feeding' (07:00-07:10)
+  CONFLICT: [Biscuit] 'Morning walk' (07:00-07:30) overlaps [Mochi] 'Thyroid medication' (07:10-07:15)
+  CONFLICT: [Biscuit] 'Morning walk' (07:00-07:30) overlaps [Mochi] 'Evening feeding' (07:15-07:25)
+  CONFLICT: [Biscuit] 'Morning walk' (07:00-07:30) overlaps [Mochi] 'Interactive toy session' (07:25-07:45)
+  CONFLICT: [Biscuit] 'Breakfast feeding' (07:30-07:40) overlaps [Mochi] 'Interactive toy session' (07:25-07:45)
+  CONFLICT: [Biscuit] 'Heartworm medication' (07:40-07:45) overlaps [Mochi] 'Interactive toy session' (07:25-07:45)
+  CONFLICT: [Biscuit] 'Evening feeding' (07:45-07:55) overlaps [Mochi] 'Litter box cleaning' (07:45-07:55)
+```
 
 **Screenshot or video** *(optional)*: <!-- Insert a screenshot or link to a demo video here -->
