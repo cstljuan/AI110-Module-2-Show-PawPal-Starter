@@ -5,12 +5,17 @@
 **a. Initial design**
 
 - Briefly describe your initial UML design.
-    - Four-class design: `Owner` holds user identity and schedule window preferences; `Pet` stores animal profile and owns a list of tasks; `Task` models a single care action with type, duration, priority, and recurrence; `Scheduler` takes an owner + pet and produces an ordered daily plan from their task list.
+    - Four-class design: 
+        - `Owner` holds user identity and schedule window preferences.
+        - `Pet` stores animal profile and owns a list of tasks.
+        - `Task` models a single care action with type, duration, priority, and recurrence
+        - `Scheduler` takes an owner + pet and produces an ordered daily plan from their task list.
+
 - What classes did you include, and what responsibilities did you assign to each?
-    - **Owner** — stores name, preferred day window (start/end time), and available hours per day. Single source of truth for scheduling constraints.
-    - **Pet** — stores species, breed, age, weight. Owns the task list; knows how to add/remove tasks.
-    - **Task** — models one care action (walk, feeding, medication, grooming, enrichment). Carries title, type, duration in minutes, priority (low/medium/high), recurrence (daily/weekly/none), preferred time-of-day, and completion flag.
-    - **Scheduler** — references Owner and Pet; runs `generate_schedule()` which sorts tasks by priority, assigns time slots from the owner's window, skips tasks that overflow available time, and returns an ordered plan with start times and reasoning notes.
+    - **Owner**: stores name, preferred day window (start/end time), and available hours per day. Single source of truth for scheduling constraints.
+    - **Pet**: stores species, breed, age, weight. Owns the task list and knows how to add/remove tasks.
+    - **Task**: models actions (walk, feeding, medication, grooming, enrichment). Carries title, type, duration in minutes, priority (low/medium/high), recurrence (daily/weekly/none), preferred time-of-day, and completion flag.
+    - **Scheduler**: references Owner and Pet; runs `generate_schedule()` which sorts tasks by priority, assigns time slots from the owner's window, skips tasks that overflow available time, and returns an ordered plan with start times and reasoning notes.
 
 **b. Design changes**
 
@@ -18,6 +23,7 @@
     - Yes. Originally `tasks` lived on `Scheduler` directly, but moved them to `Pet` because a pet's care needs exist independently of any scheduling run. Scheduler reads from `Pet.tasks`; it does not own them.
 - If yes, describe at least one change and why you made it.
     - Added `preferred_time` field to `Task` (morning/afternoon/evening/any). Initial design only had priority. Realized medication tasks often have a required window, so time-of-day preference became a soft constraint that the scheduler honors before falling back to pure priority order.
+    - Added `recurrence_days: list` to `Task` during implementation. Without it, `recurrence = "weekly"` had no way to specify *which* days — the scheduler would have no data to compare against `day_of_week`. This was a logic gap invisible in the UML but obvious once writing `_is_active_today()`.
 
 ---
 
@@ -31,7 +37,7 @@
     - **Soft constraint 2 — preferred time-of-day:** if a task requests "morning", the scheduler places it in the first third of the window when possible.
     - **Soft constraint 3 — recurrence:** daily tasks are always included; weekly tasks are included only on the designated day.
 - How did you decide which constraints mattered most?
-    - Hard time limit is non-negotiable — a schedule that overflows the day is useless. Priority rank follows because a missed medication is worse than a missed enrichment session. Time-of-day preference is honored only after priority is satisfied, since it's a comfort concern, not a health concern.
+    - Hard time limit is non-negotiable. A schedule that overflows the day is useless. Priority rank follows because a missed medication is worse than a missed enrichment session. Time-of-day preference is honored only after priority is satisfied, since it's a comfort concern, not a health concern.
 
 **b. Tradeoffs**
 
@@ -49,15 +55,15 @@
 - How did you use AI tools during this project (for example: design brainstorming, debugging, refactoring)?
     - Used AI for initial class design brainstorming (what attributes each class needs), for scaffolding method stubs with correct signatures, for explaining scheduling algorithm tradeoffs (greedy vs. optimal), and for reviewing edge cases in the scheduler logic.
 - What kinds of prompts or questions were most helpful?
-    - "What constraints should a pet care scheduler consider and which matter most?" — forced a ranked list rather than a flat one.
-    - "What edge cases could break a greedy priority scheduler for this scenario?" — surfaced the overflow/drop problem and the same-priority tie-break issue before coding.
+    - "What constraints should a pet care scheduler consider and which matter most?": forced a ranked list rather than a flat one.
+    - "What edge cases could break a greedy priority scheduler for this scenario?": surfaced the overflow/drop problem and the same-priority tie-break issue before coding.
 
 **b. Judgment and verification**
 
 - Describe one moment where you did not accept an AI suggestion as-is.
-    - AI initially suggested `Scheduler` own the task list and `Pet` hold only profile data. Accepted the profile data part, rejected task ownership — tasks belong to a pet conceptually, not to a scheduler run.
+    - AI initially suggested `Scheduler` own the task list and `Pet` hold only profile data. Accepted the profile data part, and rejected task ownership. Tasks belong to a pet conceptually, not to a scheduler run.
 - How did you evaluate or verify what the AI suggested?
-    - Asked: "If I run the scheduler twice in one day, should the tasks change?" No — tasks are stable pet data, not scheduler artifacts. That confirmed tasks belong on `Pet`. Tested the decision by tracing what `add_task()` / `remove_task()` should modify and which object a user would logically interact with.
+    - Asked: "If I run the scheduler twice in one day, should the tasks change?" No, tasks are stable pet data, not scheduler artifacts. That confirmed tasks belong on `Pet`. Tested the decision by tracing what `add_task()` / `remove_task()` should modify and which object a user would logically interact with.
 
 ---
 
@@ -72,17 +78,17 @@
     - Preferred time-of-day placement: "morning" tasks land in the first time slots when priority is equal.
     - Empty task list: scheduler returns an empty plan without crashing.
 - Why were these tests important?
-    - Priority ordering and overflow are the core scheduling guarantees — if those fail, the app produces incorrect plans. Recurrence and empty-list tests prevent silent failures that only appear in real use.
+    - Priority ordering and overflow are the core scheduling guarantees. If those fail, the app produces incorrect plans. Recurrence and empty-list tests prevent silent failures that only appear in real use.
 
 **b. Confidence**
 
 - How confident are you that your scheduler works correctly?
     - High confidence for the happy path (normal task list, valid owner window). Moderate confidence for edge cases like tasks with identical priority and identical preferred time (tie-break order may be arbitrary).
 - What edge cases would you test next if you had more time?
-    - Two tasks with same priority and same preferred time — which wins and is the tie-break deterministic?
-    - Available time exactly equal to one task's duration — is it included or excluded?
-    - Task duration longer than the entire available day window — is it skipped gracefully?
-    - Owner window crosses midnight (e.g., 22:00–06:00 next day) — does time arithmetic hold?
+    - Two tasks with same priority and same preferred time: which wins and is the tie-break deterministic?
+    - Available time exactly equal to one task's duration: is it included or excluded?
+    - Task duration longer than the entire available day window: is it skipped gracefully?
+    - Owner window crosses midnight (e.g., 22:00–06:00 next day): does time arithmetic hold?
 
 ---
 
@@ -91,7 +97,7 @@
 **a. What went well**
 
 - What part of this project are you most satisfied with?
-    - The responsibility split between `Pet` (owns tasks) and `Scheduler` (reads + orders tasks) is clean. It means the scheduler is stateless between runs — you can call `generate_schedule()` multiple times and always get a fresh plan from the same task list, which makes testing straightforward.
+    - The responsibility split between `Pet` (owns tasks) and `Scheduler` (reads + orders tasks) is clean. It means the scheduler is stateless between runs. You can call `generate_schedule()` multiple times and always get a fresh plan from the same task list, which makes testing straightforward.
 
 **b. What you would improve**
 
