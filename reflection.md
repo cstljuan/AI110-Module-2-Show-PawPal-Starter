@@ -46,6 +46,11 @@
 - Why is that tradeoff reasonable for this scenario?
     - For a single pet in a single day, greedy insertion is fast, predictable, and easy to explain to the owner. Optimal bin-packing would maximize total tasks scheduled but the explanation ("why is walk before feeding?") would be opaque. Owners care more about understanding the plan than fitting in one extra low-priority task.
 
+- Describe a second tradeoff from Phase 3 (conflict detection).
+    - `detect_conflicts()` checks whether two tasks' time windows overlap using the interval formula `a_start < b_end and b_start < a_end`. It does not check exact start-time equality — it checks whether any part of the duration overlaps.
+- Why does this matter and what does it miss?
+    - An exact-match check (`a_start == b_start`) would miss cases like Biscuit's 30-min walk (07:00–07:30) overlapping Mochi's 5-min medication (07:10–07:15). Overlap-duration detection catches those. The tradeoff is that the method only detects conflicts *after* both schedules are generated — it warns but does not re-plan. A smarter resolver would stagger pet schedules automatically; this version returns warnings and trusts the owner to adjust.
+
 ---
 
 ## 3. AI Collaboration

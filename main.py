@@ -143,6 +143,63 @@ def main():
     mochi_sched = Scheduler(owner=jordan, pet=mochi, day_of_week=day)
     print_schedule(mochi_sched, day)
 
+    # =========================================================================
+    # Phase 3 -- Algorithm Demos
+    # =========================================================================
+
+    print("=" * 52)
+    print("  Phase 3 -- Algorithm Demos")
+    print("=" * 52)
+    print()
+
+    demo_sched = Scheduler(owner=jordan, pet=biscuit, day_of_week=day)
+
+    # --- Demo 1: sort_by_time() vs sort_by_priority() -------------------------
+    print("-- sort_by_time() vs sort_by_priority() (Biscuit daily tasks) --")
+    daily = [t for t in biscuit.get_tasks() if t.recurrence == "daily"]
+    by_time     = demo_sched.sort_by_time(daily)
+    by_priority = demo_sched.sort_by_priority(daily)
+    print("  sort_by_time()    : " +
+          ", ".join(f"{t.preferred_time}/{t.priority}" for t in by_time))
+    print("  sort_by_priority(): " +
+          ", ".join(f"{t.priority}/{t.preferred_time}" for t in by_priority))
+    print()
+
+    # --- Demo 2: filter_tasks() -----------------------------------------------
+    print("-- filter_tasks(completed=...) demo (Mochi) --")
+    print(f"  All tasks:  {len(mochi.filter_tasks())}")
+    print(f"  Incomplete: {len(mochi.filter_tasks(completed=False))}")
+    first_mochi = mochi.get_tasks()[0]
+    first_mochi.mark_complete()
+    print(f"  After marking '{first_mochi.title}' complete:")
+    print(f"    Completed:  {len(mochi.filter_tasks(completed=True))}")
+    print(f"    Incomplete: {len(mochi.filter_tasks(completed=False))}")
+    print()
+
+    # --- Demo 3: handle_completion() / next_occurrence() ----------------------
+    print("-- handle_completion() recurring auto-generation (Biscuit) --")
+    target = biscuit.get_tasks()[0]  # Morning walk -- daily
+    print(f"  Completing: '{target.title}'  recurrence={target.recurrence}")
+    next_task = demo_sched.handle_completion(target)
+    if next_task:
+        print(f"  Next occurrence: '{next_task.title}'  due {next_task.due_date}")
+    print()
+
+    # --- Demo 4: detect_conflicts() cross-pet ---------------------------------
+    print("-- detect_conflicts() cross-pet owner-level check --")
+    b2 = Scheduler(owner=jordan, pet=biscuit, day_of_week=day)
+    m2 = Scheduler(owner=jordan, pet=mochi,   day_of_week=day)
+    b2.generate_schedule()
+    m2.generate_schedule()
+    conflicts = b2.detect_conflicts(other_schedules=[m2])
+    if conflicts:
+        print(f"  {len(conflicts)} conflict(s) found -- owner cannot do both simultaneously:")
+        for c in conflicts:
+            print(f"  {c}")
+    else:
+        print("  No cross-pet conflicts detected.")
+    print()
+
 
 if __name__ == "__main__":
     main()

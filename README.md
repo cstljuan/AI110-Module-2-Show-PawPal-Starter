@@ -112,23 +112,23 @@ tests/test_pawpal.py::test_task_with_recurrence_none_excluded PASSED     [100%]
 
 ## 📐 Smarter Scheduling
 
-> Fill in once you've implemented scheduling logic.
-
 | Feature | Method(s) | Notes |
 |---------|-----------|-------|
-| Task sorting | | e.g., by priority, duration |
-| Filtering | | e.g., skip tasks if time runs out |
-| Conflict handling | | e.g., overlapping time slots |
-| Recurring tasks | | e.g., daily vs. weekly |
+| Sort by priority | `Scheduler.sort_by_priority()` | High → medium → low; ties broken by preferred time-of-day (morning first). Used by default in `generate_schedule()`. |
+| Sort by time of day | `Scheduler.sort_by_time()` | Morning → afternoon → evening → any; ties broken by priority. Alternative ordering for display or comparison. |
+| Time-budget filtering | `Scheduler.filter_by_time()` | Greedy inclusion: tasks are added in priority order until available minutes run out; overflow tasks are dropped entirely, not truncated. |
+| Filter by completion | `Pet.filter_tasks(completed=True/False)` | Returns completed or incomplete tasks for a pet; `None` returns all. Useful for showing what's left in the day. |
+| Recurring tasks — daily | `Scheduler._is_active_today()` | Tasks with `recurrence="daily"` are always included in the schedule. |
+| Recurring tasks — weekly | `Scheduler._is_active_today()` | Tasks with `recurrence="weekly"` are included only when `day_of_week` matches one of `Task.recurrence_days`. |
+| Auto-generate next occurrence | `Task.next_occurrence()`, `Scheduler.handle_completion()` | Marks a task complete and creates a new Task instance with `due_date` advanced by 1 day (daily) or 7 days (weekly). |
+| Conflict detection | `Scheduler.detect_conflicts(other_schedules)` | Checks for overlapping time windows across pets using the interval formula `a_start < b_end and b_start < a_end`. Returns a list of warning strings; same-pet sequential slots are skipped (they never overlap by construction). |
 
 ## 📸 Demo Walkthrough
 
-Describe your app in numbered steps so a reader can follow along without watching a video:
-
-1. <!-- Describe this step -->
-2. <!-- Describe this step -->
-3. <!-- Describe this step -->
-4. <!-- Describe this step -->
-5. <!-- Add more steps as needed -->
+1. Open the app (`streamlit run app.py`). The sidebar prompts for owner name and daily schedule window (e.g., 07:00–19:00). Click **Save owner**.
+2. Go to the **Pets** tab. Enter a pet name, species, and breed. Click **Add pet**. Repeat for additional pets (e.g., Biscuit the dog, Mochi the cat).
+3. Go to the **Tasks** tab. Select a pet from the dropdown. Fill in task title, type, duration, priority, preferred time, and recurrence. Click **Add task**. The task table below updates immediately.
+4. Go to the **Schedule** tab. Select a pet and day of week. Click **Generate schedule**. The app shows metrics (tasks scheduled, time used, tasks skipped) and a full schedule table with start times and reasoning.
+5. The plan explanation block (plain text) shows each task's assigned slot and why it was placed there (priority, type, preferred time).
 
 **Screenshot or video** *(optional)*: <!-- Insert a screenshot or link to a demo video here -->

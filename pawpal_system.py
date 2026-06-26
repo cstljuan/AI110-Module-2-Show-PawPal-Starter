@@ -1,7 +1,7 @@
 """PawPal+ backend — Owner, Pet, Task, Scheduler."""
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import uuid
 
 
@@ -33,6 +33,7 @@ class Task:
     recurrence_days: list = field(default_factory=list)  # weekly anchor: ["monday", "friday"]
     task_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
     completed: bool = False
+    due_date: str = ""                           # "YYYY-MM-DD"; set when tracking next occurrence
 
     def __post_init__(self):
         """Validate field values on construction."""
@@ -67,7 +68,25 @@ class Task:
             "recurrence": self.recurrence,
             "recurrence_days": self.recurrence_days,
             "completed": self.completed,
+            "due_date": self.due_date,
         }
+
+    def next_occurrence(self):
+        """Return a new Task due one recurrence period later; None if recurrence='none'."""
+        if self.recurrence == "none":
+            return None
+        base = date.fromisoformat(self.due_date) if self.due_date else date.today()
+        delta = timedelta(days=1) if self.recurrence == "daily" else timedelta(days=7)
+        return Task(
+            title=self.title,
+            task_type=self.task_type,
+            duration_minutes=self.duration_minutes,
+            priority=self.priority,
+            preferred_time=self.preferred_time,
+            recurrence=self.recurrence,
+            recurrence_days=list(self.recurrence_days),
+            due_date=(base + delta).isoformat(),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -94,6 +113,12 @@ class Pet:
     def get_tasks(self) -> list:
         """Return a shallow copy of this pet's task list."""
         return list(self.tasks)
+
+    def filter_tasks(self, completed: bool = None) -> list:
+        """Return tasks filtered by completion status; None returns all tasks."""
+        if completed is None:
+            return list(self.tasks)
+        return [t for t in self.tasks if t.completed == completed]
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +191,13 @@ class Scheduler:
             key=lambda t: (t.priority_value(), TIME_ORDER.get(t.preferred_time, 3))
         )
 
+    def sort_by_time(self, tasks: list) -> list:
+        """Sort morning → afternoon → evening → any; break ties by priority."""
+        return sorted(
+            tasks,
+            key=lambda t: (TIME_ORDER.get(t.preferred_time, 3), t.priority_value())
+        )
+
     def filter_by_time(self, tasks: list, available_minutes: int) -> list:
         """Greedy include: keep tasks that fit remaining minutes; drop overflow tasks entirely."""
         selected, remaining = [], available_minutes
@@ -191,6 +223,39 @@ class Scheduler:
             })
             current += timedelta(minutes=task.duration_minutes)
         return slots
+
+    def detect_conflicts(self, other_schedules: list = None) -> list:
+        """Check for overlapping time slots across this schedule and any other_schedules; return warning strings."""
+        named_slots = [(self.pet.name, slot) for slot in self.schedule]
+        if other_schedules:
+            for other in other_schedules:
+                named_slots += [(other.pet.name, slot) for slot in other.schedule]
+
+        warnings = []
+        fmt = "%H:%M"
+        for i in range(len(named_slots)):
+            pet_a, slot_a = named_slots[i]
+            for j in range(i + 1, len(named_slots)):
+                pet_b, slot_b = named_slots[j]
+                if pet_a == pet_b:
+                    continue  # same-pet slots are assigned sequentially — never overlap
+                a_start = datetime.strptime(slot_a["start_time"], fmt)
+                a_end   = a_start + timedelta(minutes=slot_a["task"].duration_minutes)
+                b_start = datetime.strptime(slot_b["start_time"], fmt)
+                b_end   = b_start + timedelta(minutes=slot_b["task"].duration_minutes)
+                if a_start < b_end and b_start < a_end:
+                    warnings.append(
+                        f"CONFLICT: [{pet_a}] '{slot_a['task'].title}' "
+                        f"({slot_a['start_time']}-{a_end.strftime(fmt)}) overlaps "
+                        f"[{pet_b}] '{slot_b['task'].title}' "
+                        f"({slot_b['start_time']}-{b_end.strftime(fmt)})"
+                    )
+        return warnings
+
+    def handle_completion(self, task) -> "Task | None":
+        """Mark task complete and return the next-occurrence Task; None if recurrence='none'."""
+        task.mark_complete()
+        return task.next_occurrence()
 
     def generate_schedule(self) -> list:
         """Run full pipeline (recurrence filter -> priority sort -> time trim -> slot assign)."""
