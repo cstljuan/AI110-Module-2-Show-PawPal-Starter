@@ -176,3 +176,178 @@ def test_task_with_recurrence_none_excluded():
 
     scheduler = Scheduler(owner=owner, pet=pet)
     assert scheduler.generate_schedule() == []
+
+
+# ---------------------------------------------------------------------------
+# sort_by_time tests
+# ---------------------------------------------------------------------------
+
+def test_sort_by_time_chronological_order():
+    """sort_by_time returns morning before afternoon before evening."""
+    owner = make_owner()
+    pet = make_pet()
+    scheduler = Scheduler(owner=owner, pet=pet)
+
+    tasks = [
+        make_task(title="Evening task",   preferred_time="evening"),
+        make_task(title="Morning task",   preferred_time="morning"),
+        make_task(title="Afternoon task", preferred_time="afternoon"),
+    ]
+    result = scheduler.sort_by_time(tasks)
+    times = [t.preferred_time for t in result]
+    assert times == ["morning", "afternoon", "evening"]
+
+
+def test_sort_by_time_priority_breaks_ties():
+    """When two tasks share the same preferred_time, high priority comes before low."""
+    owner = make_owner()
+    pet = make_pet()
+    scheduler = Scheduler(owner=owner, pet=pet)
+
+    tasks = [
+        make_task(title="Low morning",  preferred_time="morning", priority="low"),
+        make_task(title="High morning", preferred_time="morning", priority="high"),
+    ]
+    result = scheduler.sort_by_time(tasks)
+    assert result[0].priority == "high"
+    assert result[1].priority == "low"
+
+
+# ---------------------------------------------------------------------------
+# next_occurrence / handle_completion tests
+# ---------------------------------------------------------------------------
+
+def test_next_occurrence_daily_advances_one_day():
+    """Daily task next_occurrence sets due_date to base + 1 day."""
+    task = make_task(recurrence="daily", due_date="2026-01-10")
+    next_t = task.next_occurrence()
+    assert next_t is not None
+    assert next_t.due_date == "2026-01-11"
+    assert next_t.completed is False
+
+
+def test_next_occurrence_weekly_advances_seven_days():
+    """Weekly task next_occurrence sets due_date to base + 7 days."""
+    task = make_task(recurrence="weekly", due_date="2026-01-10")
+    next_t = task.next_occurrence()
+    assert next_t is not None
+    assert next_t.due_date == "2026-01-17"
+
+
+def test_next_occurrence_none_returns_none():
+    """Task with recurrence='none' returns None from next_occurrence."""
+    task = make_task(recurrence="none")
+    assert task.next_occurrence() is None
+
+
+def test_handle_completion_marks_task_done_and_returns_next():
+    """handle_completion marks the original complete and returns a fresh next occurrence."""
+    owner = make_owner()
+    pet = make_pet()
+    scheduler = Scheduler(owner=owner, pet=pet)
+
+    task = make_task(recurrence="daily", due_date="2026-03-01")
+    next_t = scheduler.handle_completion(task)
+
+    assert task.completed is True
+    assert next_t is not None
+    assert next_t.completed is False
+    assert next_t.due_date == "2026-03-02"
+
+
+# ---------------------------------------------------------------------------
+# filter_tasks tests
+# ---------------------------------------------------------------------------
+
+def test_filter_tasks_completed_returns_only_done():
+    """filter_tasks(completed=True) returns only tasks where completed is True."""
+    pet = make_pet()
+    done = make_task(title="Done")
+    done.mark_complete()
+    pet.add_task(done)
+    pet.add_task(make_task(title="Pending"))
+
+    result = pet.filter_tasks(completed=True)
+    assert len(result) == 1
+    assert result[0].title == "Done"
+
+
+def test_filter_tasks_incomplete_returns_only_pending():
+    """filter_tasks(completed=False) returns only tasks not yet completed."""
+    pet = make_pet()
+    done = make_task(title="Done")
+    done.mark_complete()
+    pet.add_task(done)
+    pet.add_task(make_task(title="Pending"))
+
+    result = pet.filter_tasks(completed=False)
+    assert len(result) == 1
+    assert result[0].title == "Pending"
+
+
+def test_filter_tasks_none_returns_all():
+    """filter_tasks() with no argument returns all tasks regardless of status."""
+    pet = make_pet()
+    done = make_task(title="Done")
+    done.mark_complete()
+    pet.add_task(done)
+    pet.add_task(make_task(title="Pending"))
+
+    assert len(pet.filter_tasks()) == 2
+
+
+# ---------------------------------------------------------------------------
+# detect_conflicts tests
+# ---------------------------------------------------------------------------
+
+def test_detect_conflicts_finds_cross_pet_overlap():
+    """Two pets with overlapping schedules from the same owner start produce conflicts."""
+    owner = make_owner(day_start="08:00", day_end="20:00")
+
+    pet_a = make_pet(name="Biscuit")
+    pet_b = make_pet(name="Mochi")
+    pet_a.add_task(make_task(title="Walk",     duration_minutes=30))
+    pet_b.add_task(make_task(title="Feeding",  duration_minutes=10))
+
+    sched_a = Scheduler(owner=owner, pet=pet_a)
+    sched_b = Scheduler(owner=owner, pet=pet_b)
+    sched_a.generate_schedule()
+    sched_b.generate_schedule()
+
+    conflicts = sched_a.detect_conflicts(other_schedules=[sched_b])
+    # Both start at 08:00 — Walk (08:00–08:30) overlaps Feeding (08:00–08:10)
+    assert len(conflicts) > 0
+    assert "CONFLICT" in conflicts[0]
+
+
+def test_detect_conflicts_no_warning_when_other_schedule_empty():
+    """No conflicts when the other pet has no tasks scheduled for that day."""
+    owner = make_owner()
+
+    pet_a = make_pet(name="Biscuit")
+    pet_b = make_pet(name="Mochi")
+    pet_a.add_task(make_task(title="Walk", duration_minutes=30))
+    pet_b.add_task(make_task(title="Skipped", recurrence="none"))  # never active
+
+    sched_a = Scheduler(owner=owner, pet=pet_a)
+    sched_b = Scheduler(owner=owner, pet=pet_b)
+    sched_a.generate_schedule()
+    sched_b.generate_schedule()
+
+    conflicts = sched_a.detect_conflicts(other_schedules=[sched_b])
+    assert conflicts == []
+
+
+def test_detect_conflicts_same_pet_slots_never_flagged():
+    """Sequential slots within a single pet's schedule are never reported as conflicts."""
+    owner = make_owner()
+    pet = make_pet()
+    pet.add_task(make_task(title="Task 1", duration_minutes=10))
+    pet.add_task(make_task(title="Task 2", duration_minutes=10))
+
+    sched = Scheduler(owner=owner, pet=pet)
+    sched.generate_schedule()
+
+    # No other schedules — only self; same-pet skipped by design
+    conflicts = sched.detect_conflicts()
+    assert conflicts == []

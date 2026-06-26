@@ -79,35 +79,64 @@ Daily plan for Mochi (cat) -- Monday
 
 ```bash
 # Run the full test suite:
-pytest
+python -m pytest
 
-# Run with coverage:
-pytest --cov
+# Run with verbose output:
+python -m pytest -v
 ```
+
+**What the tests cover:**
+
+| Category | Tests | What's verified |
+|----------|-------|-----------------|
+| Task lifecycle | `test_mark_complete_*` | `mark_complete()` sets flag; idempotent on repeat calls |
+| Pet CRUD | `test_add_task_*`, `test_remove_task_*` | Task count changes correctly; removing missing ID is a no-op |
+| Owner time window | `test_available_minutes_*`, `test_set_schedule_window_*` | Budget math; window update persists |
+| Scheduling core | `test_generate_schedule_*` | Priority order; overflow drop; empty list |
+| Recurrence | `test_weekly_task_*`, `test_task_with_recurrence_none_*` | Weekly tasks gated by day; `none` tasks never scheduled |
+| Sorting | `test_sort_by_time_*` | `sort_by_time()` chronological order; priority tie-break |
+| Next occurrence | `test_next_occurrence_*`, `test_handle_completion_*` | Daily +1 day, weekly +7 days, `none` returns None; `handle_completion` marks done + returns fresh task |
+| Filtering | `test_filter_tasks_*` | Completed/incomplete/all filters return correct subsets |
+| Conflict detection | `test_detect_conflicts_*` | Cross-pet overlap flagged; empty schedule = no conflicts; same-pet slots never flagged |
+
+**Confidence level: ⭐⭐⭐⭐ (4/5)**
+High confidence for all core scheduling behaviors (priority order, time budget, recurrence, conflict detection). Moderate on edge cases like tasks with identical priority *and* identical preferred time where tie-break order depends on Python's stable sort — deterministic but not explicitly documented.
 
 Sample test output:
 
 ```
 ============================= test session starts =============================
 platform win32 -- Python 3.12.10, pytest-9.0.3, pluggy-1.6.0
-collected 14 items
+collected 26 items
 
-tests/test_pawpal.py::test_mark_complete_sets_completed_true PASSED      [  7%]
-tests/test_pawpal.py::test_mark_complete_is_idempotent PASSED            [ 14%]
-tests/test_pawpal.py::test_add_task_increases_count PASSED               [ 21%]
-tests/test_pawpal.py::test_add_multiple_tasks_increases_count PASSED     [ 28%]
-tests/test_pawpal.py::test_remove_task_decreases_count PASSED            [ 35%]
-tests/test_pawpal.py::test_remove_nonexistent_task_does_not_crash PASSED [ 42%]
-tests/test_pawpal.py::test_available_minutes_correct PASSED              [ 50%]
-tests/test_pawpal.py::test_set_schedule_window_updates_times PASSED      [ 57%]
-tests/test_pawpal.py::test_generate_schedule_priority_order PASSED       [ 64%]
-tests/test_pawpal.py::test_generate_schedule_drops_overflow_tasks PASSED [ 71%]
-tests/test_pawpal.py::test_generate_schedule_empty_task_list PASSED      [ 78%]
-tests/test_pawpal.py::test_weekly_task_excluded_on_wrong_day PASSED      [ 85%]
-tests/test_pawpal.py::test_weekly_task_included_on_correct_day PASSED    [ 92%]
-tests/test_pawpal.py::test_task_with_recurrence_none_excluded PASSED     [100%]
+tests/test_pawpal.py::test_mark_complete_sets_completed_true PASSED      [  3%]
+tests/test_pawpal.py::test_mark_complete_is_idempotent PASSED            [  7%]
+tests/test_pawpal.py::test_add_task_increases_count PASSED               [ 11%]
+tests/test_pawpal.py::test_add_multiple_tasks_increases_count PASSED     [ 15%]
+tests/test_pawpal.py::test_remove_task_decreases_count PASSED            [ 19%]
+tests/test_pawpal.py::test_remove_nonexistent_task_does_not_crash PASSED [ 23%]
+tests/test_pawpal.py::test_available_minutes_correct PASSED              [ 26%]
+tests/test_pawpal.py::test_set_schedule_window_updates_times PASSED      [ 30%]
+tests/test_pawpal.py::test_generate_schedule_priority_order PASSED       [ 34%]
+tests/test_pawpal.py::test_generate_schedule_drops_overflow_tasks PASSED [ 38%]
+tests/test_pawpal.py::test_generate_schedule_empty_task_list PASSED      [ 42%]
+tests/test_pawpal.py::test_weekly_task_excluded_on_wrong_day PASSED      [ 46%]
+tests/test_pawpal.py::test_weekly_task_included_on_correct_day PASSED    [ 50%]
+tests/test_pawpal.py::test_task_with_recurrence_none_excluded PASSED     [ 53%]
+tests/test_pawpal.py::test_sort_by_time_chronological_order PASSED       [ 57%]
+tests/test_pawpal.py::test_sort_by_time_priority_breaks_ties PASSED      [ 61%]
+tests/test_pawpal.py::test_next_occurrence_daily_advances_one_day PASSED [ 65%]
+tests/test_pawpal.py::test_next_occurrence_weekly_advances_seven_days PASSED [ 69%]
+tests/test_pawpal.py::test_next_occurrence_none_returns_none PASSED      [ 73%]
+tests/test_pawpal.py::test_handle_completion_marks_task_done_and_returns_next PASSED [ 76%]
+tests/test_pawpal.py::test_filter_tasks_completed_returns_only_done PASSED [ 80%]
+tests/test_pawpal.py::test_filter_tasks_incomplete_returns_only_pending PASSED [ 84%]
+tests/test_pawpal.py::test_filter_tasks_none_returns_all PASSED          [ 88%]
+tests/test_pawpal.py::test_detect_conflicts_finds_cross_pet_overlap PASSED [ 92%]
+tests/test_pawpal.py::test_detect_conflicts_no_warning_when_other_schedule_empty PASSED [ 96%]
+tests/test_pawpal.py::test_detect_conflicts_same_pet_slots_never_flagged PASSED [100%]
 
-============================= 14 passed in 0.06s ==============================
+============================= 26 passed in 0.11s ==============================
 ```
 
 ## 📐 Smarter Scheduling
