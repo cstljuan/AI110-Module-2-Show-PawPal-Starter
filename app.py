@@ -47,9 +47,23 @@ st.markdown(
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@400;600;700;800&display=swap');
 
-    /* ── base typography ── */
-    html, body, [class*="css"], .stMarkdown, p, span, li { font-family: 'Nunito', sans-serif !important; }
+    /* ── base typography (scoped to text containers — NOT spans/icons) ── */
+    html, body,
+    [data-testid="stAppViewContainer"], [data-testid="stSidebar"],
+    .stMarkdown, p, label, .stRadio, .stSelectbox, .stTextInput, .stNumberInput,
+    .stMultiSelect, .stCaption, .stAlert, .stMetric, input, textarea {
+        font-family: 'Nunito', sans-serif;
+    }
     h1, h2, h3, h4, h5 { font-family: 'Fredoka', sans-serif !important; color: #7C2D12; letter-spacing: .3px; }
+
+    /* ── CRITICAL: never override Material icon fonts (expander arrows, sidebar
+          collapse, etc.) — otherwise ligatures render as raw text like
+          "keyboard_double_arrow_left". ── */
+    [class*="material-symbols"], [class*="material-icons"],
+    [data-testid="stIconMaterial"], [data-testid="stExpanderToggleIcon"],
+    span[translate="no"], .material-symbols-rounded, .material-symbols-outlined {
+        font-family: 'Material Symbols Rounded', 'Material Symbols Outlined', 'Material Icons' !important;
+    }
 
     /* ── page background ── */
     .stApp { background: #FFF7ED; }
@@ -264,6 +278,68 @@ st.markdown(
     }
     .owner-card .owner-name { font-family: 'Fredoka', sans-serif; font-size: 1.15rem; color: #7C2D12; font-weight: 600; }
     .owner-card .owner-meta { font-size: .87rem; color: #92400E; margin-top: 4px; }
+
+    /* ── Hero (decorative, layered) ── */
+    .pawpal-hero { position: relative; overflow: hidden; }
+    .pawpal-hero::after {
+        content: "🐾"; position: absolute; right: -10px; bottom: -28px;
+        font-size: 9rem; opacity: .12; transform: rotate(-18deg);
+    }
+    .pawpal-hero::before {
+        content: "🦴"; position: absolute; right: 150px; top: -22px;
+        font-size: 4rem; opacity: .14; transform: rotate(14deg);
+    }
+    .pawpal-hero .hero-text { position: relative; z-index: 1; }
+
+    /* ── Feature cards (welcome screen) ── */
+    .feature-grid {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+        gap: 16px; margin: 8px 0 4px 0;
+    }
+    .feature-card {
+        background: #FFFFFF; border: 1.5px solid #FED7AA; border-radius: 20px;
+        padding: 22px 20px; box-shadow: 0 4px 16px rgba(124,45,18,.06);
+        transition: transform 180ms ease, box-shadow 180ms ease;
+    }
+    .feature-card:hover { transform: translateY(-4px); box-shadow: 0 10px 26px rgba(124,45,18,.12); }
+    .feature-card .fc-icon {
+        font-size: 1.9rem; width: 56px; height: 56px; display: flex;
+        align-items: center; justify-content: center; border-radius: 16px;
+        background: linear-gradient(135deg, #FFEDD5, #FED7AA); margin-bottom: 12px;
+    }
+    .feature-card .fc-title { font-family: 'Fredoka', sans-serif; font-size: 1.12rem; color: #7C2D12; font-weight: 600; margin: 0 0 4px 0; }
+    .feature-card .fc-desc { color: #92400E; font-size: .9rem; line-height: 1.45; margin: 0; }
+
+    /* ── How-it-works steps ── */
+    .steps-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap: 14px; }
+    .step-card {
+        background: #FFF; border: 1.5px solid #FED7AA; border-radius: 16px; padding: 16px 18px;
+        position: relative;
+    }
+    .step-card .step-num {
+        width: 30px; height: 30px; border-radius: 50%; background: #F97316; color: #fff;
+        font-family: 'Fredoka', sans-serif; font-weight: 600; display: flex;
+        align-items: center; justify-content: center; margin-bottom: 8px;
+    }
+    .step-card .step-title { font-weight: 800; color: #7C2D12; font-size: .98rem; }
+    .step-card .step-desc { color: #92400E; font-size: .85rem; margin-top: 2px; }
+
+    /* ── Stat overview cards ── */
+    .stat-card {
+        background: #FFFFFF; border: 1.5px solid #FED7AA; border-radius: 18px;
+        padding: 16px 18px; display: flex; align-items: center; gap: 14px;
+        box-shadow: 0 3px 12px rgba(124,45,18,.05);
+    }
+    .stat-card .stat-emoji {
+        font-size: 1.5rem; width: 48px; height: 48px; border-radius: 14px;
+        background: #FFF7ED; border: 1px solid #FDBA74;
+        display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .stat-card .stat-num { font-family: 'Fredoka', sans-serif; font-size: 1.5rem; color: #EA580C; font-weight: 600; line-height: 1; }
+    .stat-card .stat-label { color: #92400E; font-size: .82rem; margin-top: 2px; }
+
+    /* tighten default block gaps a touch */
+    .block-container { padding-top: 2.2rem; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -374,7 +450,7 @@ st.markdown(
     """
     <div class="pawpal-hero">
         <div class="hero-icon">🐾</div>
-        <div>
+        <div class="hero-text">
             <h1>Welcome to PawPal+</h1>
             <p>Take care of your pets — walks, meals, meds, and more. All planned, all on time.</p>
         </div>
@@ -384,11 +460,68 @@ st.markdown(
 )
 
 # ---------------------------------------------------------------------------
-# Guard
+# Guard — rich welcome / empty state (no owner yet)
 # ---------------------------------------------------------------------------
 
 if not st.session_state["owner"]:
-    st.info("Open **Owner settings** in the sidebar, fill in your name and schedule window, then click **Save owner** — or use **Load** to restore a saved session.")
+    st.markdown(
+        """
+        <div class="feature-grid">
+            <div class="feature-card">
+                <div class="fc-icon">🐶</div>
+                <p class="fc-title">Track every pet</p>
+                <p class="fc-desc">Register all your dogs, cats, and companions with breed, age, and weight.</p>
+            </div>
+            <div class="feature-card">
+                <div class="fc-icon">📋</div>
+                <p class="fc-title">Plan care tasks</p>
+                <p class="fc-desc">Walks, feedings, meds, grooming and play — with priority and recurrence.</p>
+            </div>
+            <div class="feature-card">
+                <div class="fc-icon">📅</div>
+                <p class="fc-title">Smart daily schedule</p>
+                <p class="fc-desc">Auto-sorts by priority or time of day and fits everything in your window.</p>
+            </div>
+            <div class="feature-card">
+                <div class="fc-icon">⚠️</div>
+                <p class="fc-title">Conflict alerts</p>
+                <p class="fc-desc">Warns you when two pets need you at the same moment.</p>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        '<div class="section-header" style="margin-top:26px;">'
+        '<div class="accent-bar"></div><h2>Get started in 3 steps</h2></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        """
+        <div class="steps-row">
+            <div class="step-card">
+                <div class="step-num">1</div>
+                <div class="step-title">Set up your day</div>
+                <div class="step-desc">Open <b>⚙️ Owner settings</b> in the sidebar, add your name and daily window, then <b>Save owner</b>.</div>
+            </div>
+            <div class="step-card">
+                <div class="step-num">2</div>
+                <div class="step-title">Add pets &amp; tasks</div>
+                <div class="step-desc">Register your pets, then give each one care tasks with durations and priorities.</div>
+            </div>
+            <div class="step-card">
+                <div class="step-num">3</div>
+                <div class="step-title">Generate a plan</div>
+                <div class="step-desc">Build a daily schedule, track tasks on the Kanban board, and save your data.</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.info("👈 Open **⚙️ Owner settings** in the sidebar and click **Save owner** to begin — or hit **📂 Load** to restore a saved session.")
     st.stop()
 
 owner: Owner = st.session_state["owner"]
@@ -410,6 +543,33 @@ with tab_pets:
         '<div class="section-header"><div class="accent-bar"></div><h2>Your Pets</h2></div>',
         unsafe_allow_html=True,
     )
+
+    # Stat overview strip
+    _pets = owner.get_pets()
+    _total_tasks = sum(len(p.get_tasks()) for p in _pets)
+    _pending = sum(len(p.filter_tasks(completed=False)) for p in _pets)
+    _done = sum(len(p.filter_tasks(completed=True)) for p in _pets)
+    s1, s2, s3, s4 = st.columns(4)
+    for col, emoji, num, label in [
+        (s1, "🐾", len(_pets), "Pets"),
+        (s2, "📋", _total_tasks, "Total tasks"),
+        (s3, "⏳", _pending, "Pending"),
+        (s4, "✅", _done, "Completed"),
+    ]:
+        with col:
+            st.markdown(
+                f"""
+                <div class="stat-card">
+                    <div class="stat-emoji">{emoji}</div>
+                    <div>
+                        <div class="stat-num">{num}</div>
+                        <div class="stat-label">{label}</div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+    st.markdown("<br>", unsafe_allow_html=True)
 
     # Add pet form inside expander so it doesn't dominate the page
     with st.expander("➕ Add a new pet", expanded=len(owner.get_pets()) == 0):
